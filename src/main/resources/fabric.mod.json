@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "sit",
+  "version": "${version}",
+  "name": "Sit",
+  "description": "Server-side: right-click stairs, slabs or another player's head with an empty hand to sit; Shift to get up.",
+  "authors": [
+    "qateralong"
+  ],
+  "license": "All Rights Reserved",
+  "icon": "assets/sit/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.qateralong.sit.Sit"
+    ]
+  },
+  "mixins": [
+    "sit.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
