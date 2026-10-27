@@ -17,7 +17,7 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -49,6 +49,7 @@ public class Sit implements ModInitializer {
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     private static final String SEAT_TAG = "sit.seat";
     private static final double SEAT_HEIGHT = 0.5;
+    private static final int RESYNC_TICKS = 20;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("sit.json");
     private static final Set<Entity> SEATS = ConcurrentHashMap.newKeySet();
@@ -87,8 +88,7 @@ public class Sit implements ModInitializer {
                 entity.discard();
             }
         });
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
-            ServerPlayer player = handler.getPlayer();
+        ServerPlayerEvents.LEAVE.register(player -> {
             player.ejectPassengers();
             if (player.isPassenger()) {
                 player.stopRiding();
@@ -97,6 +97,9 @@ public class Sit implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickSeats();
             syncStandUp();
+            if (server.getTickCount() % RESYNC_TICKS == 0) {
+                resyncCarriers(server.getPlayerList().getPlayers());
+            }
             if (config.carrierShiftDrops) {
                 for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                     if (player.isShiftKeyDown() && player.getFirstPassenger() instanceof Player) {
@@ -227,6 +230,21 @@ public class Sit implements ModInitializer {
             }
         }
         dead.forEach(SEATS::remove);
+    }
+
+    private static void resyncCarriers(List<ServerPlayer> players) {
+        for (ServerPlayer carrier : players) {
+            if (!(carrier.getFirstPassenger() instanceof Player)) {
+                continue;
+            }
+            ClientboundSetPassengersPacket packet = new ClientboundSetPassengersPacket(carrier);
+            carrier.serverLevel().getChunkSource().broadcastAndSend(carrier, packet);
+            for (Entity passenger : carrier.getPassengers()) {
+                if (passenger instanceof ServerPlayer rider) {
+                    rider.connection.send(packet);
+                }
+            }
+        }
     }
 
     private static void syncStandUp() {
