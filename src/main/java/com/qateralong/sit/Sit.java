@@ -54,6 +54,7 @@ public class Sit implements ModInitializer {
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("sit.json");
     private static final Set<Entity> SEATS = ConcurrentHashMap.newKeySet();
     private static final Map<ServerPlayer, Vec3> STAND_UP = new ConcurrentHashMap<>();
+    private static final Map<ServerPlayer, List<Entity>> CARRIED = new ConcurrentHashMap<>();
     private static Config config = new Config();
 
     public static class Config {
@@ -70,6 +71,7 @@ public class Sit implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPED.register(s -> {
             SEATS.clear();
             STAND_UP.clear();
+            CARRIED.clear();
         });
         UseBlockCallback.EVENT.register((player, level, hand, hit) -> {
             if (level.isClientSide() || !(player instanceof ServerPlayer sp) || !canStart(sp, hand)) {
@@ -89,6 +91,7 @@ public class Sit implements ModInitializer {
             }
         });
         ServerPlayerEvents.LEAVE.register(player -> {
+            CARRIED.remove(player);
             player.ejectPassengers();
             if (player.isPassenger()) {
                 player.stopRiding();
@@ -97,6 +100,7 @@ public class Sit implements ModInitializer {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             tickSeats();
             syncStandUp();
+            syncCarriers(server.getPlayerList().getPlayers());
             if (server.getTickCount() % RESYNC_TICKS == 0) {
                 resyncCarriers(server.getPlayerList().getPlayers());
             }
@@ -230,6 +234,22 @@ public class Sit implements ModInitializer {
             }
         }
         dead.forEach(SEATS::remove);
+    }
+
+    private static void syncCarriers(List<ServerPlayer> players) {
+        for (ServerPlayer carrier : players) {
+            List<Entity> passengers = carrier.getPassengers();
+            List<Entity> last = CARRIED.getOrDefault(carrier, List.of());
+            if (passengers.equals(last)) {
+                continue;
+            }
+            carrier.connection.send(new ClientboundSetPassengersPacket(carrier));
+            if (passengers.isEmpty()) {
+                CARRIED.remove(carrier);
+            } else {
+                CARRIED.put(carrier, List.copyOf(passengers));
+            }
+        }
     }
 
     private static void resyncCarriers(List<ServerPlayer> players) {
